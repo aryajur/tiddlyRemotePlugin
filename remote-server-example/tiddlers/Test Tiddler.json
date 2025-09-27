@@ -1,0 +1,15 @@
+{
+  "title": "Test Tiddler",
+  "text": "Hello!\n\n\nIC Design Steps\n\nDo the DOPL",
+  "modifier": "YourName",
+  "modified": "2025-09-26T18:45:23.664Z",
+  "tags": [],
+  "created": "2025-09-26T07:20:00.000Z",
+  "fields": {
+    "changecount": "2",
+    "remote.storage": "true",
+    "server.type": "remotestorage",
+    "server.host": "http://localhost:3000"
+  },
+  "creator": "YourName"
+}

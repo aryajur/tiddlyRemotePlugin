@@ -1,0 +1,55 @@
+# Dependencies
+remote-server-example/node_modules/
+remote-server-example/npm-debug.log*
+remote-server-example/yarn-debug.log*
+remote-server-example/yarn-error.log*
+
+# Lock files (optional - some teams prefer to include package-lock.json)
+remote-server-example/package-lock.json
+
+# Runtime files
+remote-server-example/*.pid
+remote-server-example/*.seed
+remote-server-example/*.pid.lock
+
+# Logs
+remote-server-example/logs/
+remote-server-example/*.log
+
+# Environment variables
+remote-server-example/.env
+remote-server-example/.env.local
+remote-server-example/.env.development.local
+remote-server-example/.env.test.local
+remote-server-example/.env.production.local
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Coverage reports
+remote-server-example/coverage/
+remote-server-example/.nyc_output/
+
+# Optional npm cache directory
+remote-server-example/.npm
+
+# Optional REPL history
+remote-server-example/.node_repl_history
