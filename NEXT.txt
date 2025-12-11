@@ -1,0 +1,162 @@
+1. Image integration
+2. Document integration
+3. Access Control per user
+4. Multiuser edit log and timeout
+5. Openresty server
+
+Make this manage documents as well:
+Store all tiddlers on the drive as done right now. 
+Do same with documents
+Use it as a git repository to version control it
+Use Solr to index and search them
+
+Add drag and drop of image and document to place the link format.
+Upload image/doc during save and change link there
+
+
+Methodology for Seamless Image Upload Integration
+
+  Based on my analysis of TiddlyWiki's image handling and the existing plugin architecture, here's a
+   comprehensive approach:
+
+  Image Detection Strategy
+
+  1. Multiple Detection Points:
+  - During tiddler save - scan for image references in [img[...]] syntax
+  - During drag & drop - intercept image file drops and auto-upload
+  - During paste operations - detect base64 data URIs from clipboard
+  - During external link processing - detect local file:// URLs
+
+  2. Image Reference Types to Handle:
+  // Base64 embedded images
+  data:image/png;base64,iVBORw0KGgoAAAANSUhE...
+
+  // Local file references
+  [img[./images/photo.jpg]]
+  [img[file:///C:/Users/photos/image.png]]
+
+  // Relative paths
+  [img[images/diagram.svg]]
+
+  // Binary tiddler references
+  [img[MyImageTiddler]]
+
+● Server-Side Image Storage API
+
+  New Endpoints to Add:
+  // Upload image from base64 or file
+  POST /api/images
+  Content-Type: multipart/form-data or application/json
+  {
+    "filename": "photo.jpg",
+    "contentType": "image/jpeg",
+    "data": "base64-encoded-data"
+  }
+  Response: { "imageId": "uuid", "url": "/api/images/uuid" }
+
+  // Get image by ID
+  GET /api/images/:imageId
+  Response: Binary image data with proper Content-Type header
+
+  // List images (for cleanup/management)
+  GET /api/images
+  Response: [{ "imageId": "uuid", "filename": "photo.jpg", "contentType": "image/jpeg",
+  "uploadDate": "..." }]
+
+  // Delete image
+  DELETE /api/images/:imageId
+
+  Storage Strategy:
+  - Generate UUID for each image to avoid filename conflicts
+  - Store original filename as metadata
+  - Preserve content-type for proper serving
+  - Create thumbnails for large images (optional)
+  - Implement cleanup for orphaned images
+
+● URL Rewriting & Content Processing
+
+  1. Content Transformation Pipeline:
+  // Before save to remote server
+  [img[./photos/sunset.jpg]] → [img[{{remote-server-url}}/api/images/abc-123-uuid]]
+
+  // Image mapping stored in tiddler fields
+  fields: {
+    "remote.images": JSON.stringify({
+      "./photos/sunset.jpg": "abc-123-uuid",
+      "data:image/png;base64,...": "def-456-uuid"
+    })
+  }
+
+  2. Bi-directional Processing:
+  - Upload transform: Convert local/base64 → remote URLs before server save
+  - Download transform: Keep remote URLs but cache image mapping
+  - Display transform: Show images properly in both local and remote contexts
+
+  3. Fallback Strategy:
+  // If remote image fails to load, try:
+  1. Local cache
+  2. Original local file (if still exists)
+  3. Placeholder image
+  4. Base64 embedded version (if available)
+
+● Integration Points in Existing Plugin
+
+  Key Extension Areas:
+
+  1. Enhanced putTiddler Method:
+  // In RemoteStorageAdaptor.prototype.putTiddler
+  1. Scan tiddler.text for image references
+  2. Extract and upload new images
+  3. Update tiddler.text with remote URLs
+  4. Store image mapping in tiddler.fields['remote.images']
+  5. Proceed with normal tiddler save
+
+  2. New Image Processing Functions:
+  config.extensions.RemoteStorage.processImages = function(tiddlerText, imageMapping) {
+    // Extract images, upload new ones, return transformed text
+  };
+
+  config.extensions.RemoteStorage.uploadImage = function(imageData, callback) {
+    // Handle base64/file upload to server
+  };
+
+  3. Enhanced Drag & Drop Handler:
+  // Override TiddlyWiki's drag/drop to intercept images
+  document.addEventListener('drop', function(event) {
+    if (isImageFile && isRemoteTiddler) {
+      // Auto-upload and embed remote URL
+    }
+  });
+
+  4. Cleanup & Synchronization:
+  // Orphaned image cleanup when tiddler deleted
+  config.extensions.RemoteStorage.cleanupOrphanedImages = function(deletedTiddler) {
+    // Parse image mappings and delete unused images
+  };
+
+  // Bulk image sync for existing tiddlers
+  config.extensions.RemoteStorage.syncAllImages = function() {
+    // Process all remote tiddlers for local images
+  };
+
+  User Experience Flow
+
+  Seamless Workflow:
+  1. User creates tiddler with local images ([img[./photos/cat.jpg]])
+  2. User clicks "remote" button to move tiddler to remote storage
+  3. Plugin automatically:
+    - Detects local image references
+    - Uploads images to server
+    - Rewrites URLs to point to remote server
+    - Saves transformed tiddler
+  4. Images display normally - user sees no difference
+  5. When downloading back to local, images can be re-downloaded or cached
+
+  Configuration Options:
+  - Auto-upload images when moving tiddler to remote
+  - Maximum image size limits
+  - Image quality/compression settings
+  - Cleanup policies for deleted tiddlers
+
+  This methodology provides a comprehensive, user-friendly approach that handles images
+  transparently while maintaining the plugin's existing architecture and reliability.
