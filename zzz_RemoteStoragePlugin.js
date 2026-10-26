@@ -1,7 +1,7 @@
 // /***
 // |Name|zzz_RemoteStoragePlugin|
 // |Description|Store tiddlers on a remote server instead of in the HTML file (loads after other plugins)|
-// |Version|1.9.1|
+// |Version|1.10.0|
 // |Author|Assistant|
 // |~CoreVersion|2.6.6|
 // |Type|plugin|
@@ -9,7 +9,7 @@
 // !!!!!Code
 // ***/
 // //{{{
-// version.extensions.RemoteStoragePlugin = { major: 1, minor: 9, revision: 0, date: new Date(2024, 12, 25) };
+// version.extensions.RemoteStoragePlugin = { major: 1, minor: 10, revision: 0, date: new Date(2026, 9, 22) };
 
 // (function($) {
 
@@ -24,7 +24,36 @@
 // 	pendingChanges: {}, // Queue for offline changes
 // 	isOnline: true,
 // 	lastSyncTime: 0, // Track when we last synced the remote list
-// 	searchRemote: true // Enable remote search
+// 	searchRemote: true, // Enable remote search
+// 	authToken: '' // Login token for servers with user accounts (empty = not logged in)
+// };
+
+// // Server replies may be wrapped in the standard envelope {RESP, CODE, MSG, DATA, META}
+// // (OpenResty server) or be raw JSON (Node example server). Return the useful part of either.
+// config.extensions.RemoteStorage.unwrap = function(data) {
+// 	if(data && typeof data === 'object' && !Array.isArray(data) &&
+// 	   data.hasOwnProperty('RESP') && data.hasOwnProperty('DATA')) {
+// 		return data.DATA;
+// 	}
+// 	return data;
+// };
+
+// // Build the HTTP headers for a server request: API key (if any) and login token (if any)
+// config.extensions.RemoteStorage.getAuthHeaders = function(apiKey) {
+// 	var headers = {};
+// 	if(apiKey) headers['X-API-Key'] = apiKey;
+// 	if(this.authToken) headers['Authorization'] = 'Bearer ' + this.authToken;
+// 	return headers;
+// };
+
+// // Best error text for a failed request: the server's own message if it sent one
+// // (envelope MSG or Node {error}), otherwise the HTTP status text
+// config.extensions.RemoteStorage.errorText = function(xhr) {
+// 	try {
+// 		var body = JSON.parse(xhr.responseText);
+// 		if(body && (body.MSG || body.error)) return body.MSG || body.error;
+// 	} catch(e) {}
+// 	return xhr.statusText;
 // };
 
 // // Check online status
@@ -284,8 +313,9 @@
 // 	$.ajax({
 // 		url: url,
 // 		type: 'GET',
-// 		headers: this.apiKey ? { 'X-API-Key': this.apiKey } : {},
+// 		headers: config.extensions.RemoteStorage.getAuthHeaders(this.apiKey),
 // 		success: function(data) {
+// 			data = config.extensions.RemoteStorage.unwrap(data);
 // 			context.tiddlers = data;
 // 			context.status = true;
 
@@ -296,7 +326,7 @@
 // 		},
 // 		error: function(xhr) {
 // 			context.status = false;
-// 			context.statusText = 'Error getting tiddler list: ' + xhr.statusText;
+// 			context.statusText = 'Error getting tiddler list: ' + config.extensions.RemoteStorage.errorText(xhr);
 // 			if(callback) callback(context, userParams);
 // 		}
 // 	});
@@ -324,8 +354,9 @@
 // 			$.ajax({
 // 				url: url,
 // 				type: 'GET',
-// 				headers: adaptor.apiKey ? { 'X-API-Key': adaptor.apiKey } : {},
+// 				headers: config.extensions.RemoteStorage.getAuthHeaders(adaptor.apiKey),
 // 				success: function(data) {
+// 					data = config.extensions.RemoteStorage.unwrap(data);
 // 					var tiddler = new Tiddler(title);
 // 					tiddler.assign(data.title, data.text, data.modifier,
 // 						new Date(data.modified), data.tags, new Date(data.created),
@@ -343,7 +374,7 @@
 // 				},
 // 				error: function(xhr) {
 // 					context.status = false;
-// 					context.statusText = 'Error getting tiddler: ' + xhr.statusText;
+// 					context.statusText = 'Error getting tiddler: ' + config.extensions.RemoteStorage.errorText(xhr);
 // 					if(callback) callback(context, userParams);
 // 				}
 // 			});
@@ -352,8 +383,9 @@
 // 			$.ajax({
 // 				url: url,
 // 				type: 'GET',
-// 				headers: adaptor.apiKey ? { 'X-API-Key': adaptor.apiKey } : {},
+// 				headers: config.extensions.RemoteStorage.getAuthHeaders(adaptor.apiKey),
 // 				success: function(data) {
+// 					data = config.extensions.RemoteStorage.unwrap(data);
 // 					var tiddler = new Tiddler(title);
 // 					tiddler.assign(data.title, data.text, data.modifier,
 // 						new Date(data.modified), data.tags, new Date(data.created),
@@ -368,7 +400,7 @@
 // 				},
 // 				error: function(xhr) {
 // 					context.status = false;
-// 					context.statusText = 'Error getting tiddler: ' + xhr.statusText;
+// 					context.statusText = 'Error getting tiddler: ' + config.extensions.RemoteStorage.errorText(xhr);
 // 					if(callback) callback(context, userParams);
 // 				}
 // 			});
@@ -406,7 +438,7 @@
 // 	$.ajax({
 // 		url: url,
 // 		type: 'PUT',
-// 		headers: this.apiKey ? { 'X-API-Key': this.apiKey } : {},
+// 		headers: config.extensions.RemoteStorage.getAuthHeaders(this.apiKey),
 // 		data: JSON.stringify(data),
 // 		contentType: 'application/json',
 // 		success: function(response) {
@@ -423,7 +455,7 @@
 // 		},
 // 		error: function(xhr) {
 // 			context.status = false;
-// 			context.statusText = 'Error saving tiddler: ' + xhr.statusText;
+// 			context.statusText = 'Error saving tiddler: ' + config.extensions.RemoteStorage.errorText(xhr);
 // 			if(callback) callback(context, userParams);
 // 		}
 // 	});
@@ -447,7 +479,7 @@
 // 	$.ajax({
 // 		url: url,
 // 		type: 'DELETE',
-// 		headers: this.apiKey ? { 'X-API-Key': this.apiKey } : {},
+// 		headers: config.extensions.RemoteStorage.getAuthHeaders(this.apiKey),
 // 		success: function() {
 // 			// Remove from cache
 // 			config.extensions.RemoteStorage.removeCachedTiddler(title);
@@ -462,7 +494,7 @@
 // 		},
 // 		error: function(xhr) {
 // 			context.status = false;
-// 			context.statusText = 'Error deleting tiddler: ' + xhr.statusText;
+// 			context.statusText = 'Error deleting tiddler: ' + config.extensions.RemoteStorage.errorText(xhr);
 // 			if(callback) callback(context, userParams);
 // 		}
 // 	});
@@ -477,15 +509,15 @@
 // 	$.ajax({
 // 		url: url,
 // 		type: 'GET',
-// 		headers: this.apiKey ? { 'X-API-Key': this.apiKey } : {},
+// 		headers: config.extensions.RemoteStorage.getAuthHeaders(this.apiKey),
 // 		success: function(data) {
-// 			context.searchResults = data;
+// 			context.searchResults = config.extensions.RemoteStorage.unwrap(data);
 // 			context.status = true;
 // 			if(callback) callback(context, userParams);
 // 		},
 // 		error: function(xhr) {
 // 			context.status = false;
-// 			context.statusText = 'Error searching remote tiddlers: ' + xhr.statusText;
+// 			context.statusText = 'Error searching remote tiddlers: ' + config.extensions.RemoteStorage.errorText(xhr);
 // 			if(callback) callback(context, userParams);
 // 		}
 // 	});
@@ -551,8 +583,10 @@
 // 		if(tiddler.isRemote() &&
 // 		   tiddler.text === '[This tiddler is stored remotely]' &&
 // 		   currentRemoteTitles.indexOf(title) === -1) {
-// 			// This remote tiddler no longer exists on server
-// 			store.deleteTiddler(title);
+// 			// This remote tiddler no longer exists on server (or is no longer visible to us).
+// 			// Remove the placeholder locally ONLY: store.deleteTiddler is overridden below and
+// 			// would also send a DELETE to the server for remote tiddlers.
+// 			originalDeleteTiddler.call(store, title);
 // 			displayMessage("Remote tiddler deleted from server: " + title);
 // 		}
 // 	});
@@ -796,11 +830,14 @@
 // 			// Make synchronous XMLHttpRequest
 // 			var xhr = new XMLHttpRequest();
 // 			xhr.open('GET', url, false); // false = synchronous
-// 			xhr.setRequestHeader('X-API-Key', config.extensions.RemoteStorage.apiKey);
+// 			var authHeaders = config.extensions.RemoteStorage.getAuthHeaders(config.extensions.RemoteStorage.apiKey);
+// 			for(var headerName in authHeaders) {
+// 				xhr.setRequestHeader(headerName, authHeaders[headerName]);
+// 			}
 // 			xhr.send();
 
 // 			if(xhr.status === 200) {
-// 				var searchResults = JSON.parse(xhr.responseText);
+// 				var searchResults = config.extensions.RemoteStorage.unwrap(JSON.parse(xhr.responseText));
 
 // 				if(searchResults.length > 0) {
 // 					// Process remote search results
@@ -1181,12 +1218,12 @@
 // })(jQuery);
 // //}}}
 
-///////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////
 
 /***
 |Name|zzz_RemoteStoragePlugin|
 |Description|Store tiddlers on a remote server instead of in the HTML file (loads after other plugins)|
-|Version|1.10.0|
+|Version|1.10.1|
 |Author|Assistant|
 |~CoreVersion|2.6.6|
 |Type|plugin|
@@ -1194,7 +1231,7 @@
 !!!!!Code
 ***/
 //{{{
-version.extensions.RemoteStoragePlugin = { major: 1, minor: 10, revision: 0, date: new Date(2026, 9, 22) };
+version.extensions.RemoteStoragePlugin = { major: 1, minor: 10, revision: 1, date: new Date(2026, 9, 23) };
 
 (function($) {
 
@@ -1210,7 +1247,8 @@ config.extensions.RemoteStorage = {
 	isOnline: true,
 	lastSyncTime: 0, // Track when we last synced the remote list
 	searchRemote: true, // Enable remote search
-	authToken: '' // Login token for servers with user accounts (empty = not logged in)
+	authToken: '', // Login token for servers with user accounts (empty = not logged in)
+	savingTiddler: false // true while TiddlyWiki's saveTiddler runs (see store.saveTiddler override)
 };
 
 // Server replies may be wrapped in the standard envelope {RESP, CODE, MSG, DATA, META}
@@ -1900,15 +1938,32 @@ Tiddler.prototype.setRemote = function(isRemote) {
 //--
 var originalSaveTiddler = store.saveTiddler;
 store.saveTiddler = function(title, newTitle, newBody, modifier, modified, tags, fields, clearChangeCount, created, creator) {
+	// TiddlyWiki 2.10 also accepts a Tiddler object as the first argument
+	var oldTitle = (title instanceof Tiddler) ? title.title : title;
+
 	// Get the existing tiddler to check if it's remote
-	var existingTiddler = store.fetchTiddler(title);
+	var existingTiddler = store.fetchTiddler(oldTitle);
 	var wasRemote = existingTiddler && existingTiddler.isRemote();
 
-	// Call the original saveTiddler to update the local store
-	var result = originalSaveTiddler.apply(this, arguments);
+	// Call the original saveTiddler to update the local store.
+	// TiddlyWiki's saveTiddler calls this.deleteTiddler(title) to replace the old version.
+	// That is a local replace, not a delete: the flag stops our deleteTiddler hook
+	// from sending DELETE to the server (it used to send DELETE + PUT on every edit).
+	var result;
+	config.extensions.RemoteStorage.savingTiddler = true;
+	try {
+		result = originalSaveTiddler.apply(this, arguments);
+	} finally {
+		config.extensions.RemoteStorage.savingTiddler = false;
+	}
 
 	// Get the newly saved tiddler
-	var newTiddler = store.fetchTiddler(newTitle || title);
+	var finalTitle = newTitle || oldTitle;
+	var newTiddler = store.fetchTiddler(finalTitle);
+
+	// Renamed remote tiddler: the old title must go from the server, but only
+	// AFTER the new title is safely stored there
+	var renamedFrom = (wasRemote && finalTitle !== oldTitle) ? oldTitle : null;
 
 	// If it's a remote tiddler, sync to server and don't mark as dirty
 	if(newTiddler && newTiddler.isRemote()) {
@@ -1919,8 +1974,19 @@ store.saveTiddler = function(title, newTitle, newBody, modifier, modified, tags,
 				// Clear the dirty flag since we've saved to remote
 				store.setDirty(false);
 				displayMessage("Remote tiddler '" + newTiddler.title + "' saved to server");
+				if(renamedFrom) {
+					adaptor.deleteTiddler(renamedFrom, {}, null, function(deleteContext) {
+						if(!deleteContext.status) {
+							displayMessage("Renamed, but the old title '" + renamedFrom +
+								"' could not be removed from the server: " + deleteContext.statusText);
+						}
+					});
+				}
 			} else {
 				displayMessage("Failed to save remote tiddler: " + context.statusText);
+				if(renamedFrom) {
+					displayMessage("The server still has it under the old title '" + renamedFrom + "'");
+				}
 			}
 		});
 
@@ -1929,6 +1995,11 @@ store.saveTiddler = function(title, newTitle, newBody, modifier, modified, tags,
 		if(wasRemote) {
 			store.setDirty(false);
 		}
+	} else if(wasRemote) {
+		// Was remote, is no longer marked remote after this save (unusual, e.g. its
+		// fields were removed by hand). The old behaviour deleted the server copy here
+		// by accident; keep it on the server instead, so nothing is lost.
+		console.warn("RemoteStorage: '" + oldTitle + "' is no longer marked remote; server copy kept");
 	}
 
 	return result;
@@ -1941,8 +2012,9 @@ var originalDeleteTiddler = store.deleteTiddler;
 store.deleteTiddler = function(title) {
 	var tiddler = store.fetchTiddler(title);
 
-	// If it's a remote tiddler, delete from server
-	if(tiddler && tiddler.isRemote()) {
+	// If it's a remote tiddler, delete from server - unless TiddlyWiki is only
+	// replacing the old version during a save (see store.saveTiddler above)
+	if(tiddler && tiddler.isRemote() && !config.extensions.RemoteStorage.savingTiddler) {
 		var adaptor = new RemoteStorageAdaptor();
 		adaptor.deleteTiddler(title, {}, null, function(context) {
 			if(context.status) {
