@@ -4,10 +4,13 @@
  *   jsonBody(ctx)           -> { data } or { error }   (decode the JSON body)
  *   titleFromUri(ctx, pre)  -> title or null          (tiddler title from the raw URL)
  *   query(ctx, name)        -> query string value or ''
+ *   bearerToken(ctx)        -> token from "Authorization: Bearer <token>" or ''
+ *   isLocal(ctx)            -> true if the request comes from this computer
  *   dispatch({GET: f, ...}) -> handler that picks f by HTTP method (405 otherwise)
  *
  * Lua port: ngx.req.read_body() + get_body_data() (fallback get_body_file()) + cjson.decode,
- * ngx.var.request_uri + ngx.unescape_uri, ngx.req.get_uri_args(), ngx.req.get_method().
+ * ngx.var.request_uri + ngx.unescape_uri, ngx.req.get_uri_args(), ngx.req.get_method(),
+ * ngx.req.get_headers()["authorization"], ngx.var.remote_addr.
  */
 const response = require('./response');
 
@@ -43,6 +46,19 @@ function query(ctx, name) {
 	return value === null ? '' : value;
 }
 
+// Login token from "Authorization: Bearer <token>", or '' if none
+function bearerToken(ctx) {
+	const header = ctx.req.get('authorization') || '';
+	const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
+	return match ? match[1] : '';
+}
+
+// true if the request comes from this computer (127.0.0.1 / ::1)
+function isLocal(ctx) {
+	const ip = (ctx.req.socket && ctx.req.socket.remoteAddress) || '';
+	return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
 // The route table matches on URL only (as root.lua does); this picks the function per method
 function dispatch(handlers) {
 	return function(ctx) {
@@ -54,4 +70,4 @@ function dispatch(handlers) {
 	};
 }
 
-module.exports = { jsonBody, titleFromUri, query, dispatch };
+module.exports = { jsonBody, titleFromUri, query, bearerToken, isLocal, dispatch };

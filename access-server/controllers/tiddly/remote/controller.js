@@ -13,11 +13,20 @@
 const auth = require('../../../lib/auth');
 const request = require('../../../lib/request');
 const health = require('./handlers/health');
+const session = require('./handlers/session');
 const tiddlers = require('./handlers/tiddlers');
 const search = require('./handlers/search');
 
 module.exports = [
 	{ uri: /^\/health$/,           handler: health.handle },
+
+	// Login (step 04). setup and login need no login themselves.
+	{ uri: /^\/api\/setup$/,       handler: request.dispatch({ POST: session.setup }) },
+	{ uri: /^\/api\/login$/,       handler: request.dispatch({ POST: session.login }) },
+	{ uri: /^\/api\/logout$/,      handler: auth.required(request.dispatch({ POST: session.logout })) },
+	{ uri: /^\/api\/me$/,          handler: auth.required(request.dispatch({ GET: session.me })) },
+
+	// Tiddlers
 	{ uri: /^\/api\/search$/,      handler: auth.required(request.dispatch({ GET: search.handle })) },
 	{ uri: /^\/api\/tiddlers\/.+$/, handler: auth.required(request.dispatch({
 		GET: tiddlers.get,

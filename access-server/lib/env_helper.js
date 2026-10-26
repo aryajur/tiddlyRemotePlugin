@@ -14,7 +14,10 @@ const DEFAULTS = {
 	PORT: '3001',                                   // example server uses 3000, OpenResty will use 8080
 	DATA_DIR: path.join(__dirname, '..', 'data'),   // tiddlers/ (and later users.json, groups.json) live here
 	AUTH_MODE: 'apikey',                            // 'apikey' = behaves like remote-server-example
-	API_KEY: 'your-secret-api-key',                 // same default as remote-server-example
+	                                                // 'users'  = username/password login (step 04+)
+	API_KEY: 'your-secret-api-key',                 // same default as remote-server-example (apikey mode only)
+	SESSION_TTL: '28800',                           // users mode: login valid for 8 hours (seconds)
+	SETUP_ALLOW_REMOTE: 'false',                    // users mode: allow first-admin setup from other computers
 	CORS_ORIGIN: '*',                               // allowed browser origin
 	SUBDOMAIN: 'wiki',                              // only used for logging (as in root_for_reference.lua)
 	DOMAIN: 'localhost'

@@ -3,8 +3,9 @@
  * Node.js counterpart of nginx.conf: listen on a port, read request bodies,
  * and hand EVERY request to root.js. No routing or logic lives here.
  *
- * Start:   npm start                         (port 3001, data in ./data)
+ * Start:   npm start                         (port 3001, data in ./data, API-key mode)
  *          PORT=3002 DATA_DIR=../tmp/access-data npm start
+ *          AUTH_MODE=users DATA_DIR=../tmp/access-users npm start   (username/password login)
  */
 const express = require('express');
 const env = require('./lib/env_helper');
@@ -12,6 +13,8 @@ const log = require('./lib/log_helper');
 const response = require('./lib/response');
 const storage = require('./lib/storage');
 const auth = require('./lib/auth');
+const users = require('./lib/users');
+const sessions = require('./lib/sessions');
 const root = require('./root');
 
 function createApp() {
@@ -58,7 +61,20 @@ function start() {
 				console.log('WARNING: using the default API key. Set API_KEY for anything but local testing.');
 			}
 		}
+		if (mode === 'users') {
+			console.log('Users file: ' + users.usersFile());
+			console.log('Login valid for: ' + sessions.ttlSeconds() + ' seconds');
+			if (users.userCount() === 0) {
+				console.log('\nNO USERS YET. Create the first administrator from THIS computer:');
+				console.log('  curl -X POST http://localhost:' + port + '/api/setup -H "Content-Type: application/json" \\');
+				console.log('       -d \'{"username":"admin","password":"choose-a-strong-password"}\'');
+			}
+		}
 		console.log('\nAPI Endpoints (replies use the {RESP, CODE, MSG, DATA, META} envelope):');
+		console.log('  POST   /api/setup             - Create the first administrator (users mode)');
+		console.log('  POST   /api/login             - Log in, returns a token (users mode)');
+		console.log('  POST   /api/logout            - Log out');
+		console.log('  GET    /api/me                - Who am I');
 		console.log('  GET    /api/tiddlers          - List all tiddlers');
 		console.log('  GET    /api/tiddlers/:title   - Get a specific tiddler');
 		console.log('  PUT    /api/tiddlers/:title   - Create/update a tiddler');
