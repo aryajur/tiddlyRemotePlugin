@@ -1,7 +1,7 @@
 // /***
 // |Name|zzz_RemoteStoragePlugin|
 // |Description|Store tiddlers on a remote server instead of in the HTML file (loads after other plugins)|
-// |Version|1.10.0|
+// |Version|1.10.1|
 // |Author|Assistant|
 // |~CoreVersion|2.6.6|
 // |Type|plugin|
@@ -9,7 +9,7 @@
 // !!!!!Code
 // ***/
 // //{{{
-// version.extensions.RemoteStoragePlugin = { major: 1, minor: 10, revision: 0, date: new Date(2026, 9, 22) };
+// version.extensions.RemoteStoragePlugin = { major: 1, minor: 10, revision: 1, date: new Date(2026, 9, 23) };
 
 // (function($) {
 
@@ -25,7 +25,8 @@
 // 	isOnline: true,
 // 	lastSyncTime: 0, // Track when we last synced the remote list
 // 	searchRemote: true, // Enable remote search
-// 	authToken: '' // Login token for servers with user accounts (empty = not logged in)
+// 	authToken: '', // Login token for servers with user accounts (empty = not logged in)
+// 	savingTiddler: false // true while TiddlyWiki's saveTiddler runs (see store.saveTiddler override)
 // };
 
 // // Server replies may be wrapped in the standard envelope {RESP, CODE, MSG, DATA, META}
@@ -715,15 +716,32 @@
 // //--
 // var originalSaveTiddler = store.saveTiddler;
 // store.saveTiddler = function(title, newTitle, newBody, modifier, modified, tags, fields, clearChangeCount, created, creator) {
+// 	// TiddlyWiki 2.10 also accepts a Tiddler object as the first argument
+// 	var oldTitle = (title instanceof Tiddler) ? title.title : title;
+
 // 	// Get the existing tiddler to check if it's remote
-// 	var existingTiddler = store.fetchTiddler(title);
+// 	var existingTiddler = store.fetchTiddler(oldTitle);
 // 	var wasRemote = existingTiddler && existingTiddler.isRemote();
 
-// 	// Call the original saveTiddler to update the local store
-// 	var result = originalSaveTiddler.apply(this, arguments);
+// 	// Call the original saveTiddler to update the local store.
+// 	// TiddlyWiki's saveTiddler calls this.deleteTiddler(title) to replace the old version.
+// 	// That is a local replace, not a delete: the flag stops our deleteTiddler hook
+// 	// from sending DELETE to the server (it used to send DELETE + PUT on every edit).
+// 	var result;
+// 	config.extensions.RemoteStorage.savingTiddler = true;
+// 	try {
+// 		result = originalSaveTiddler.apply(this, arguments);
+// 	} finally {
+// 		config.extensions.RemoteStorage.savingTiddler = false;
+// 	}
 
 // 	// Get the newly saved tiddler
-// 	var newTiddler = store.fetchTiddler(newTitle || title);
+// 	var finalTitle = newTitle || oldTitle;
+// 	var newTiddler = store.fetchTiddler(finalTitle);
+
+// 	// Renamed remote tiddler: the old title must go from the server, but only
+// 	// AFTER the new title is safely stored there
+// 	var renamedFrom = (wasRemote && finalTitle !== oldTitle) ? oldTitle : null;
 
 // 	// If it's a remote tiddler, sync to server and don't mark as dirty
 // 	if(newTiddler && newTiddler.isRemote()) {
@@ -734,8 +752,19 @@
 // 				// Clear the dirty flag since we've saved to remote
 // 				store.setDirty(false);
 // 				displayMessage("Remote tiddler '" + newTiddler.title + "' saved to server");
+// 				if(renamedFrom) {
+// 					adaptor.deleteTiddler(renamedFrom, {}, null, function(deleteContext) {
+// 						if(!deleteContext.status) {
+// 							displayMessage("Renamed, but the old title '" + renamedFrom +
+// 								"' could not be removed from the server: " + deleteContext.statusText);
+// 						}
+// 					});
+// 				}
 // 			} else {
 // 				displayMessage("Failed to save remote tiddler: " + context.statusText);
+// 				if(renamedFrom) {
+// 					displayMessage("The server still has it under the old title '" + renamedFrom + "'");
+// 				}
 // 			}
 // 		});
 
@@ -744,6 +773,11 @@
 // 		if(wasRemote) {
 // 			store.setDirty(false);
 // 		}
+// 	} else if(wasRemote) {
+// 		// Was remote, is no longer marked remote after this save (unusual, e.g. its
+// 		// fields were removed by hand). The old behaviour deleted the server copy here
+// 		// by accident; keep it on the server instead, so nothing is lost.
+// 		console.warn("RemoteStorage: '" + oldTitle + "' is no longer marked remote; server copy kept");
 // 	}
 
 // 	return result;
@@ -756,8 +790,9 @@
 // store.deleteTiddler = function(title) {
 // 	var tiddler = store.fetchTiddler(title);
 
-// 	// If it's a remote tiddler, delete from server
-// 	if(tiddler && tiddler.isRemote()) {
+// 	// If it's a remote tiddler, delete from server - unless TiddlyWiki is only
+// 	// replacing the old version during a save (see store.saveTiddler above)
+// 	if(tiddler && tiddler.isRemote() && !config.extensions.RemoteStorage.savingTiddler) {
 // 		var adaptor = new RemoteStorageAdaptor();
 // 		adaptor.deleteTiddler(title, {}, null, function(context) {
 // 			if(context.status) {
@@ -1218,12 +1253,12 @@
 // })(jQuery);
 // //}}}
 
-////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /***
 |Name|zzz_RemoteStoragePlugin|
 |Description|Store tiddlers on a remote server instead of in the HTML file (loads after other plugins)|
-|Version|1.10.1|
+|Version|1.11.0|
 |Author|Assistant|
 |~CoreVersion|2.6.6|
 |Type|plugin|
@@ -1231,7 +1266,7 @@
 !!!!!Code
 ***/
 //{{{
-version.extensions.RemoteStoragePlugin = { major: 1, minor: 10, revision: 1, date: new Date(2026, 9, 23) };
+version.extensions.RemoteStoragePlugin = { major: 1, minor: 11, revision: 0, date: new Date(2026, 9, 27) };
 
 (function($) {
 
@@ -1248,6 +1283,10 @@ config.extensions.RemoteStorage = {
 	lastSyncTime: 0, // Track when we last synced the remote list
 	searchRemote: true, // Enable remote search
 	authToken: '', // Login token for servers with user accounts (empty = not logged in)
+	username: '', // Logged-in user (servers with user accounts)
+	userGroups: [], // Groups of the logged-in user (from the server)
+	isAdmin: false, // Logged-in user is an administrator
+	notified: {}, // Messages already shown once (avoid repeating the same warning)
 	savingTiddler: false // true while TiddlyWiki's saveTiddler runs (see store.saveTiddler override)
 };
 
@@ -1277,6 +1316,165 @@ config.extensions.RemoteStorage.errorText = function(xhr) {
 		if(body && (body.MSG || body.error)) return body.MSG || body.error;
 	} catch(e) {}
 	return xhr.statusText;
+};
+
+//--
+//-- Login session (servers with user accounts, e.g. access-server with AUTH_MODE=users)
+//-- API-key servers never need any of this: authToken simply stays empty.
+//--
+
+// Remember who is logged in (token + name survive a page reload; groups come from the server)
+config.extensions.RemoteStorage.setUser = function(user) {
+	user = user || {};
+	this.username = user.username || this.username || '';
+	this.userGroups = user.groups || [];
+	this.isAdmin = !!user.isAdmin;
+};
+
+config.extensions.RemoteStorage.saveSession = function() {
+	if(window.localStorage) {
+		localStorage.setItem('RemoteStorage.authToken', this.authToken);
+		localStorage.setItem('RemoteStorage.username', this.username);
+	}
+};
+
+config.extensions.RemoteStorage.clearSession = function() {
+	this.authToken = '';
+	this.username = '';
+	this.userGroups = [];
+	this.isAdmin = false;
+	if(window.localStorage) {
+		localStorage.removeItem('RemoteStorage.authToken');
+		localStorage.removeItem('RemoteStorage.username');
+	}
+};
+
+// Show a message only once until the next login (search runs on every keystroke)
+config.extensions.RemoteStorage.notifyOnce = function(key, message) {
+	if(this.notified[key]) return;
+	this.notified[key] = true;
+	displayMessage(message);
+};
+
+// Called for every failed request. A 401 from OUR server means the login is missing,
+// expired, ended by logout elsewhere, or the user was disabled.
+// Content already in the browser is kept, so an unsaved edit is never lost.
+config.extensions.RemoteStorage.checkUnauthorized = function(xhr, url) {
+	if(!xhr || xhr.status !== 401) return false;
+	// Ignore answers from another server (e.g. "Test Connection" with a URL not yet saved)
+	if(url && this.serverUrl && url.indexOf(this.serverUrl) !== 0) return false;
+	if(this.authToken) {
+		this.clearSession();
+		this.notifyOnce('auth', "Your login has expired or was ended. Please log in again: backstage -> remote storage");
+	} else {
+		this.notifyOnce('auth', "The remote server needs a login (or a correct API key): backstage -> remote storage");
+	}
+	return true;
+};
+
+// POST /api/login. callback(ok, message)
+config.extensions.RemoteStorage.login = function(username, password, callback) {
+	var rs = this;
+	if(!rs.serverUrl) {
+		callback(false, 'Enter the Server URL and click Save Settings first');
+		return;
+	}
+	$.ajax({
+		url: rs.serverUrl + '/api/login',
+		type: 'POST',
+		contentType: 'application/json',
+		data: JSON.stringify({ username: username, password: password }),
+		success: function(data) {
+			data = rs.unwrap(data);
+			if(!data || !data.token) {
+				callback(false, 'Unexpected reply from the server');
+				return;
+			}
+			rs.authToken = data.token;
+			rs.username = '';
+			rs.setUser(data.user);
+			rs.notified = {};
+			rs.cache = {};
+			rs.saveSession();
+			callback(true);
+			rs.syncRemoteList();
+		},
+		error: function(xhr) {
+			var message;
+			if(xhr.status === 0) message = 'Cannot reach the server';
+			else if(xhr.status === 404) message = 'This server does not support user login (it uses an API key)';
+			else message = rs.errorText(xhr);
+			callback(false, message);
+		}
+	});
+};
+
+// GET /api/me: refresh name/groups of a saved login (e.g. after a page reload).
+// 401 -> the saved login is no longer valid. Any other error (server down, API-key
+// server without /api/me) keeps the login. Always calls callback.
+config.extensions.RemoteStorage.refreshMe = function(callback) {
+	var rs = this;
+	if(!rs.authToken || !rs.serverUrl) {
+		if(callback) callback();
+		return;
+	}
+	var url = rs.serverUrl + '/api/me';
+	$.ajax({
+		url: url,
+		type: 'GET',
+		headers: rs.getAuthHeaders(rs.apiKey),
+		success: function(data) {
+			rs.setUser(rs.unwrap(data));
+			if(callback) callback();
+		},
+		error: function(xhr) {
+			rs.checkUnauthorized(xhr, url);
+			if(callback) callback();
+		}
+	});
+};
+
+// Remove every remote tiddler from THIS BROWSER only. Uses TiddlyWiki's own delete
+// (originalDeleteTiddler): the overridden store.deleteTiddler would also delete them
+// ON THE SERVER. Returns the number removed.
+config.extensions.RemoteStorage.removeRemoteTiddlersLocally = function() {
+	var titles = [];
+	store.forEachTiddler(function(title, tiddler) {
+		if(tiddler.isRemote()) titles.push(title);
+	});
+	var wasDirty = store.isDirty();
+	for(var i = 0; i < titles.length; i++) {
+		if(story.getTiddler(titles[i])) story.closeTiddler(titles[i], false);
+		originalDeleteTiddler.call(store, titles[i]);
+	}
+	this.cache = {};
+	// Removing them is not a change the user has to save
+	store.setDirty(wasDirty);
+	return titles.length;
+};
+
+// Log out: end the login on the server, forget it here, remove remote tiddlers from
+// this browser (they stay on the server). Returns false if the user cancelled.
+config.extensions.RemoteStorage.logout = function() {
+	var rs = this;
+	var pending = Object.keys(rs.pendingChanges).length;
+	if(pending > 0 && !confirm("You have " + pending + " change(s) not yet sent to the server. " +
+			"Logging out discards them. Continue?")) {
+		return false;
+	}
+	if(rs.authToken && rs.serverUrl) {
+		// Best effort: the token is forgotten here even if the server cannot be reached
+		$.ajax({ url: rs.serverUrl + '/api/logout', type: 'POST', headers: rs.getAuthHeaders(rs.apiKey) });
+	}
+	rs.clearSession();
+	rs.pendingChanges = {};
+	if(window.localStorage) {
+		localStorage.setItem('RemoteStorage.pendingChanges', JSON.stringify(rs.pendingChanges));
+	}
+	var removed = rs.removeRemoteTiddlersLocally();
+	rs.notified = {};
+	displayMessage("Logged out. " + removed + " remote tiddler(s) removed from this browser (they are still on the server).");
+	return true;
 };
 
 // Check online status
@@ -1548,6 +1746,7 @@ RemoteStorageAdaptor.prototype.getTiddlerList = function(context, userParams, ca
 			if(callback) callback(context, userParams);
 		},
 		error: function(xhr) {
+			config.extensions.RemoteStorage.checkUnauthorized(xhr, url);
 			context.status = false;
 			context.statusText = 'Error getting tiddler list: ' + config.extensions.RemoteStorage.errorText(xhr);
 			if(callback) callback(context, userParams);
@@ -1596,6 +1795,7 @@ RemoteStorageAdaptor.prototype.getTiddler = function(title, context, userParams,
 					if(callback) callback(context, userParams);
 				},
 				error: function(xhr) {
+					config.extensions.RemoteStorage.checkUnauthorized(xhr, url);
 					context.status = false;
 					context.statusText = 'Error getting tiddler: ' + config.extensions.RemoteStorage.errorText(xhr);
 					if(callback) callback(context, userParams);
@@ -1622,6 +1822,7 @@ RemoteStorageAdaptor.prototype.getTiddler = function(title, context, userParams,
 					if(callback) callback(context, userParams);
 				},
 				error: function(xhr) {
+					config.extensions.RemoteStorage.checkUnauthorized(xhr, url);
 					context.status = false;
 					context.statusText = 'Error getting tiddler: ' + config.extensions.RemoteStorage.errorText(xhr);
 					if(callback) callback(context, userParams);
@@ -1677,6 +1878,7 @@ RemoteStorageAdaptor.prototype.putTiddler = function(tiddler, context, userParam
 			if(callback) callback(context, userParams);
 		},
 		error: function(xhr) {
+			config.extensions.RemoteStorage.checkUnauthorized(xhr, url);
 			context.status = false;
 			context.statusText = 'Error saving tiddler: ' + config.extensions.RemoteStorage.errorText(xhr);
 			if(callback) callback(context, userParams);
@@ -1716,6 +1918,7 @@ RemoteStorageAdaptor.prototype.deleteTiddler = function(title, context, userPara
 			if(callback) callback(context, userParams);
 		},
 		error: function(xhr) {
+			config.extensions.RemoteStorage.checkUnauthorized(xhr, url);
 			context.status = false;
 			context.statusText = 'Error deleting tiddler: ' + config.extensions.RemoteStorage.errorText(xhr);
 			if(callback) callback(context, userParams);
@@ -1739,6 +1942,7 @@ RemoteStorageAdaptor.prototype.searchTiddlers = function(query, context, userPar
 			if(callback) callback(context, userParams);
 		},
 		error: function(xhr) {
+			config.extensions.RemoteStorage.checkUnauthorized(xhr, url);
 			context.status = false;
 			context.statusText = 'Error searching remote tiddlers: ' + config.extensions.RemoteStorage.errorText(xhr);
 			if(callback) callback(context, userParams);
@@ -2138,7 +2342,8 @@ TiddlyWiki.prototype.search = function(searchRegExp, sortField, excludeTag, matc
 						return combinedResults;
 					}
 				}
-			} else {
+			} else if(!config.extensions.RemoteStorage.checkUnauthorized(xhr, url)) {
+				// (a 401 is reported once by checkUnauthorized, not on every keystroke)
 				displayMessage("Remote search failed (HTTP " + xhr.status + ")");
 			}
 		} catch(e) {
@@ -2351,8 +2556,22 @@ config.macros.remoteStorage = {
 		cacheInput.value = config.extensions.RemoteStorage.cacheTimeout;
 		createTiddlyElement(form, 'br');
 
+		// Redraw this panel (after log in / log out)
+		var rerender = function() {
+			var parent = wrapper.parentNode;
+			jQuery(wrapper).remove();
+			config.macros.remoteStorage.handler(parent);
+		};
+
 		// Save button
 		createTiddlyButton(form, 'Save Settings', 'Save remote storage configuration', function() {
+			// A login belongs to one server: changing the server URL logs out
+			var oldUrl = config.extensions.RemoteStorage.serverUrl;
+			if(config.extensions.RemoteStorage.authToken && oldUrl && oldUrl !== urlInput.value) {
+				config.extensions.RemoteStorage.clearSession();
+				config.extensions.RemoteStorage.removeRemoteTiddlersLocally();
+				displayMessage('Server URL changed: you were logged out of ' + oldUrl);
+			}
 			config.extensions.RemoteStorage.serverUrl = urlInput.value;
 			config.extensions.RemoteStorage.apiKey = keyInput.value;
 			config.extensions.RemoteStorage.autoSync = autoSyncCheck.checked;
@@ -2376,6 +2595,7 @@ config.macros.remoteStorage = {
 			if(config.extensions.RemoteStorage.autoSync) {
 				config.extensions.RemoteStorage.syncRemoteList();
 			}
+			rerender();
 		});
 
 		// Test connection button
@@ -2399,10 +2619,58 @@ config.macros.remoteStorage = {
 			config.extensions.RemoteStorage.syncRemoteList();
 		});
 
+		// Account: log in / log out (only servers with user accounts need this)
+		var rs = config.extensions.RemoteStorage;
+		var account = createTiddlyElement(wrapper, 'div', null, 'remoteStorageAccount');
+		createTiddlyElement(account, 'h4', null, null, 'Account');
+		if(rs.authToken) {
+			var who = 'Logged in as ' + (rs.username || '(unknown)');
+			if(rs.userGroups && rs.userGroups.length) who += ' - groups: ' + rs.userGroups.join(', ');
+			if(rs.isAdmin) who += ' - administrator';
+			createTiddlyElement(account, 'div', null, null, who);
+			createTiddlyButton(account, 'Log out', 'Log out and remove remote tiddlers from this browser', function() {
+				if(rs.logout()) rerender();
+				return false;
+			});
+		} else {
+			createTiddlyElement(account, 'div', null, null,
+				'Only for servers with user accounts. Servers that use an API key need no login.');
+			createTiddlyElement(account, 'label', null, null, 'Username: ');
+			var userInput = createTiddlyElement(account, 'input', null, null);
+			userInput.type = 'text';
+			userInput.style.width = '150px';
+			createTiddlyElement(account, 'label', null, null, ' Password: ');
+			var passInput = createTiddlyElement(account, 'input', null, null);
+			passInput.type = 'password';
+			passInput.style.width = '150px';
+			createTiddlyElement(account, 'br');
+			var doLogin = function() {
+				displayMessage('Logging in...');
+				rs.login(userInput.value, passInput.value, function(ok, message) {
+					passInput.value = '';
+					if(ok) {
+						displayMessage('Logged in as ' + rs.username);
+						rerender();
+					} else {
+						displayMessage('Login failed: ' + message);
+					}
+				});
+				return false;
+			};
+			createTiddlyButton(account, 'Log in', 'Log in to the remote server', doLogin);
+			// Enter in the password box logs in
+			passInput.onkeydown = function(e) {
+				e = e || window.event;
+				if(e.keyCode === 13) return doLogin();
+			};
+		}
+
 		// Status display
 		var statusDiv = createTiddlyElement(wrapper, 'div', null, 'remoteStorageStatus');
 		createTiddlyElement(statusDiv, 'h4', null, null, 'Status');
 		var statusText = 'Online: ' + config.extensions.RemoteStorage.isOnline;
+		statusText += '\nLogged in: ' + (config.extensions.RemoteStorage.authToken ?
+			config.extensions.RemoteStorage.username : 'no');
 		statusText += '\nLazy Loading: ' + (config.extensions.RemoteStorage.lazyLoading ? 'Enabled' : 'Disabled');
 		statusText += '\nRemote Search: ' + (config.extensions.RemoteStorage.searchRemote ? 'Enabled' : 'Disabled');
 		statusText += '\nCached tiddlers: ' + Object.keys(config.extensions.RemoteStorage.cache).length;
@@ -2440,6 +2708,12 @@ if(window.localStorage) {
 
 	var timeout = localStorage.getItem('RemoteStorage.cacheTimeout');
 	if(timeout) config.extensions.RemoteStorage.cacheTimeout = parseInt(timeout);
+
+	// Saved login (servers with user accounts); checked with the server on startup
+	var savedToken = localStorage.getItem('RemoteStorage.authToken');
+	if(savedToken) config.extensions.RemoteStorage.authToken = savedToken;
+	var savedUser = localStorage.getItem('RemoteStorage.username');
+	if(savedUser) config.extensions.RemoteStorage.username = savedUser;
 }
 
 // Add to backstage
@@ -2456,18 +2730,21 @@ merge(config.tasks, {
 jQuery(document).ready(function() {
 	if(config.extensions.RemoteStorage.autoSync && config.extensions.RemoteStorage.serverUrl) {
 		setTimeout(function() {
-			// Always sync the remote list first
-			config.extensions.RemoteStorage.syncRemoteList();
+			// Check a saved login first (does nothing without one), then sync as before
+			config.extensions.RemoteStorage.refreshMe(function() {
+				// Always sync the remote list first
+				config.extensions.RemoteStorage.syncRemoteList();
 
-			// Sync pending changes
-			config.extensions.RemoteStorage.syncPendingChanges();
+				// Sync pending changes
+				config.extensions.RemoteStorage.syncPendingChanges();
 
-			// If not using lazy loading, also sync tiddler content
-			if(!config.extensions.RemoteStorage.lazyLoading) {
-				setTimeout(function() {
-					config.extensions.RemoteStorage.syncRemoteTiddlers();
-				}, 2000);
-			}
+				// If not using lazy loading, also sync tiddler content
+				if(!config.extensions.RemoteStorage.lazyLoading) {
+					setTimeout(function() {
+						config.extensions.RemoteStorage.syncRemoteTiddlers();
+					}, 2000);
+				}
+			});
 		}, 1000);
 	}
 });
