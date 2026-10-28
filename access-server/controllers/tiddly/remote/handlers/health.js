@@ -15,7 +15,8 @@ function handle(ctx) {
 		status: 'ok',
 		dataDir: storage.dataDir(),
 		authMode: authMode,
-		setupRequired: authMode === 'users' && users.userCount() === 0
+		setupRequired: authMode === 'users' && users.userCount() === 0,
+		ungroupedPolicy: env.get('UNGROUPED_POLICY')
 	});
 }
 

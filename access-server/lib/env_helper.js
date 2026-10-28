@@ -18,6 +18,7 @@ const DEFAULTS = {
 	API_KEY: 'your-secret-api-key',                 // same default as remote-server-example (apikey mode only)
 	SESSION_TTL: '28800',                           // users mode: login valid for 8 hours (seconds)
 	SETUP_ALLOW_REMOTE: 'false',                    // users mode: allow first-admin setup from other computers
+	UNGROUPED_POLICY: 'admin',                      // tiddlers with no group: 'admin' = admin-only, 'everyone' = all users
 	CORS_ORIGIN: '*',                               // allowed browser origin
 	SUBDOMAIN: 'wiki',                              // only used for logging (as in root_for_reference.lua)
 	DOMAIN: 'localhost'

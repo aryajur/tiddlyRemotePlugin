@@ -47,6 +47,12 @@ function start() {
 		process.exit(1);
 	}
 
+	const ungrouped = env.get('UNGROUPED_POLICY');
+	if (ungrouped !== 'admin' && ungrouped !== 'everyone') {
+		console.error("Unsupported UNGROUPED_POLICY '" + ungrouped + "'. Use 'admin' or 'everyone'.");
+		process.exit(1);
+	}
+
 	storage.ensureDirs();
 	const port = parseInt(env.get('PORT'), 10);
 
@@ -64,6 +70,8 @@ function start() {
 		if (mode === 'users') {
 			console.log('Users file: ' + users.usersFile());
 			console.log('Login valid for: ' + sessions.ttlSeconds() + ' seconds');
+			console.log('Group access: users see only tiddlers of their groups; tiddlers without a group: ' +
+				(ungrouped === 'admin' ? 'administrators only' : 'every logged-in user') + ' (UNGROUPED_POLICY=' + ungrouped + ')');
 			if (users.userCount() === 0) {
 				console.log('\nNO USERS YET. Create the first administrator from THIS computer:');
 				console.log('  curl -X POST http://localhost:' + port + '/api/setup -H "Content-Type: application/json" \\');
