@@ -4,7 +4,10 @@ Remote storage server for `zzz_RemoteStoragePlugin` (v1.10.0+) that adds
 **users, groups and an admin panel**. It is built step by step
 (see `paste_ready/` and `ACCESS_CONTROL_ROADMAP.md`).
 
-Current state (step 06):
+Current state (step 07): everything below, plus the **admin API** (users, groups,
+tiddler groups) for administrators - see "Admin API".
+
+Step 06 state:
 - `AUTH_MODE=apikey` (default): same features as `remote-server-example`, API-key protection.
 - `AUTH_MODE=users`: username/password login with session tokens, and **group access
   control**: a user sees, opens, searches, saves and deletes only tiddlers that share a
@@ -70,7 +73,8 @@ DATA_DIR=../tmp/access-users node tools/users_cli.js add alice alice-pass-1 --gr
 DATA_DIR=../tmp/access-users node tools/users_cli.js passwd admin new-admin-pass
 ```
 
-Commands: `list`, `add`, `passwd`, `groups`, `disable`, `enable`, `delete`.
+Commands: `list`, `add`, `passwd`, `groups`, `admin <name> on|off`, `disable`, `enable`, `delete`.
+The last active administrator cannot be disabled, deleted or demoted.
 
 ## Tiddler groups from the command line
 
@@ -103,6 +107,31 @@ Every reply: `{ "RESP": "OK"|"ERROR", "CODE": <status>, "MSG": "...", "DATA": ..
 "Logged in" = header `Authorization: Bearer <token>` (users mode). The API key is
 not accepted in users mode.
 
+## Admin API (administrators, users mode)
+
+| Method | Path | Body | DATA |
+|---|---|---|---|
+| GET | `/api/admin/users` | | `[ user ]` (never password hashes) |
+| POST | `/api/admin/users` | `{username, password, groups?, defaultGroup?, isAdmin?}` | `{user}` |
+| PUT | `/api/admin/users/<name>` | any of `{password, groups, defaultGroup, isAdmin, disabled}` | `{user}` |
+| DELETE | `/api/admin/users/<name>` | | `{deleted}` |
+| GET | `/api/admin/groups` | | `[ {name, description, created, users, tiddlers} ]` |
+| POST | `/api/admin/groups` | `{name, description?}` | `{group}` |
+| PUT | `/api/admin/groups/<name>` | `{description}` | `{group}` |
+| DELETE | `/api/admin/groups/<name>` | (`?force=true` if in use) | `{deleted, removedFromUsers, removedFromTiddlers}` |
+| GET | `/api/admin/tiddlers` | (`?ungrouped=true`) | `[ {title, groups, modified, modifier, tags} ]` |
+| PUT | `/api/admin/tiddler-groups` | `{titles: [...], groups: [...], mode: "set"/"add"/"remove"}` | `{updated, notFound}` |
+
+Rules:
+- There is always at least one active administrator (409 otherwise).
+- Administrators cannot delete, disable or demote themselves (400: ask another administrator).
+- Groups given for users or tiddlers must exist (400 "Unknown group").
+- Deleting a group that is in use needs `?force=true`; it is then removed from all users
+  and tiddlers (a tiddler left without a group becomes admin-only).
+- Deleting or disabling a user, or resetting their password, ends their logins.
+- Every change is logged: `NOTICE [req=...] ADMIN <who>: <what>`.
+- Normal users get 403 "Administrator only"; in API-key mode the admin API answers 400.
+
 Errors: 400 bad input, 401 not logged in / bad key / expired login, 403 disabled
 account or setup from another computer, 404 not found, 405 wrong method,
 409 conflict (setup already done; two titles map to one file name),
@@ -127,7 +156,7 @@ the same format the later OpenResty server uses. Never commit `DATA_DIR`.
 | `server.js` | start-up, body reading, hands every request to root | `conf/nginx.conf` |
 | `root.js` | entry point: CORS, logging, route lookup, error safety | `root.lua` |
 | `controllers/tiddly/remote/controller.js` | ordered route list | `controller.lua` |
-| `controllers/tiddly/remote/handlers/*.js` | one file per feature | `handlers/*.lua` |
+| `controllers/tiddly/remote/handlers/*.js` | one file per feature (`admin.js` = admin API) | `handlers/*.lua` |
 | `lib/env_helper.js`, `lib/log_helper.js` | settings, logging | `env_helper.lua`, `log_helper.lua` |
 | `lib/response.js` | envelope replies | `response.lua` |
 | `lib/request.js` | body, title, query, token, method dispatch | `request.lua` |

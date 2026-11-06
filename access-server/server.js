@@ -83,6 +83,7 @@ function start() {
 		console.log('  POST   /api/login             - Log in, returns a token (users mode)');
 		console.log('  POST   /api/logout            - Log out');
 		console.log('  GET    /api/me                - Who am I');
+		console.log('  *      /api/admin/...         - Users, groups, tiddler groups (administrators, users mode)');
 		console.log('  GET    /api/tiddlers          - List all tiddlers');
 		console.log('  GET    /api/tiddlers/:title   - Get a specific tiddler');
 		console.log('  PUT    /api/tiddlers/:title   - Create/update a tiddler');

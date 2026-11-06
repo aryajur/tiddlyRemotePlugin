@@ -100,7 +100,26 @@ function ensureGroupsFile() {
 	if (fileio.read(groupsFile()) === null) saveGroups({ version: 1, groups: {} });
 }
 
+// Number of administrators that are not disabled (in a loaded users.json)
+function activeAdminCount(data) {
+	return Object.keys(data.users).filter(n => data.users[n].isAdmin && !data.users[n].disabled).length;
+}
+
+// Would this change leave NO active administrator? (target is currently an active admin
+// and is being deleted, disabled or demoted). Used by the admin API and the users CLI.
+function wouldRemoveLastAdmin(data, name) {
+	const u = data.users[name];
+	return !!u && u.isAdmin && !u.disabled && activeAdminCount(data) <= 1;
+}
+
+// Names in the list that are not in groups.json ([] if all exist)
+function unknownGroups(list) {
+	const existing = loadGroups().groups;
+	return (list || []).filter(g => !Object.prototype.hasOwnProperty.call(existing, g));
+}
+
 module.exports = {
 	usersFile, groupsFile, loadUsers, saveUsers, loadGroups, saveGroups, ensureGroupsFile,
-	normalizeName, getUser, userCount, publicUser, checkUsername, checkPassword, checkGroupName
+	normalizeName, getUser, userCount, publicUser, checkUsername, checkPassword, checkGroupName,
+	activeAdminCount, wouldRemoveLastAdmin, unknownGroups
 };

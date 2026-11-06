@@ -15,7 +15,9 @@
  *   DATA_DIR=../tmp/access-users node tools/users_cli.js disable alice
  *   DATA_DIR=../tmp/access-users node tools/users_cli.js enable alice
  *   DATA_DIR=../tmp/access-users node tools/users_cli.js delete alice
+ *   DATA_DIR=../tmp/access-users node tools/users_cli.js admin alice on      (or off)
  *
+ * The last active administrator cannot be disabled, deleted or demoted.
  * Groups named in --groups / groups are created in groups.json if missing.
  * Note: a password typed on the command line can end up in the shell history.
  */
@@ -129,20 +131,38 @@ function main() {
 	case 'disable':
 	case 'enable': {
 		if (!record) fail('no such user "' + name + '"');
+		if (command === 'disable' && users.wouldRemoveLastAdmin(data, name)) {
+			fail('"' + name + '" is the last active administrator. Make another user administrator first.');
+		}
 		record.disabled = command === 'disable';
 		users.saveUsers(data);
 		console.log('User "' + name + '" ' + command + 'd');
 		return;
 	}
+	case 'admin': {
+		if (!record) fail('usage: admin <username> on|off');
+		const on = args[2] === 'on';
+		if (!on && args[2] !== 'off') fail('usage: admin <username> on|off');
+		if (!on && users.wouldRemoveLastAdmin(data, name)) {
+			fail('"' + name + '" is the last active administrator. Make another user administrator first.');
+		}
+		record.isAdmin = on;
+		users.saveUsers(data);
+		console.log('User "' + name + '" is ' + (on ? 'now an administrator' : 'no longer an administrator'));
+		return;
+	}
 	case 'delete': {
 		if (!record) fail('no such user "' + name + '"');
+		if (users.wouldRemoveLastAdmin(data, name)) {
+			fail('"' + name + '" is the last active administrator. Make another user administrator first.');
+		}
 		delete data.users[name];
 		users.saveUsers(data);
 		console.log('Deleted user "' + name + '"');
 		return;
 	}
 	default:
-		console.log('Commands: list | add | passwd | groups | disable | enable | delete');
+		console.log('Commands: list | add | passwd | groups | admin | disable | enable | delete');
 		console.log('See the top of tools/users_cli.js for examples.');
 	}
 }

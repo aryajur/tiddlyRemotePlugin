@@ -1,6 +1,6 @@
 {
   "name": "tiddlywiki-access-server",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "description": "Remote storage server for TiddlyWiki RemoteStoragePlugin with access control (structured like the OpenResty root.lua style for a later port)",
   "main": "server.js",
