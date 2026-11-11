@@ -15,6 +15,7 @@ const request = require('../../../lib/request');
 const health = require('./handlers/health');
 const session = require('./handlers/session');
 const admin = require('./handlers/admin');
+const account = require('./handlers/account');
 const tiddlers = require('./handlers/tiddlers');
 const search = require('./handlers/search');
 
@@ -30,6 +31,10 @@ module.exports = [
 	{ uri: /^\/api\/logout$/,      handler: auth.required(request.dispatch({ POST: session.logout })) },
 	{ uri: /^\/api\/me$/,          handler: auth.required(request.dispatch({ GET: session.me })) },
 
+	// My access (step 07b): what the logged-in user owns and can see; change groups of own tiddlers
+	{ uri: /^\/api\/me\/access$/,         handler: auth.required(request.dispatch({ GET: account.access })) },
+	{ uri: /^\/api\/me\/tiddler-groups$/, handler: auth.required(request.dispatch({ PUT: account.setMyTiddlerGroups })) },
+
 	// Admin API (step 07)
 	{ uri: /^\/api\/admin\/users$/,         handler: adminRoute({ GET: admin.listUsers, POST: admin.createUser }) },
 	{ uri: /^\/api\/admin\/users\/[^/]+$/,  handler: adminRoute({ PUT: admin.updateUser, DELETE: admin.deleteUser }) },
@@ -37,6 +42,7 @@ module.exports = [
 	{ uri: /^\/api\/admin\/groups\/[^/]+$/, handler: adminRoute({ PUT: admin.updateGroup, DELETE: admin.deleteGroup }) },
 	{ uri: /^\/api\/admin\/tiddlers$/,      handler: adminRoute({ GET: admin.listTiddlers }) },
 	{ uri: /^\/api\/admin\/tiddler-groups$/, handler: adminRoute({ PUT: admin.setTiddlerGroups }) },
+	{ uri: /^\/api\/admin\/tiddler-owner$/,  handler: adminRoute({ PUT: admin.setTiddlerOwner }) },
 
 	// Tiddlers
 	{ uri: /^\/api\/search$/,      handler: auth.required(request.dispatch({ GET: search.handle })) },

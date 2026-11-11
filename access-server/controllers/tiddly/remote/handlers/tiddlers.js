@@ -1,18 +1,23 @@
 /**
- * Tiddler endpoints - with group access control (step 06)
+ * Tiddler endpoints - with group access control (step 06) and ownership (step 07b)
  *
- *   GET    /api/tiddlers          list   -> DATA: [ {title, modified, modifier, tags, groups} ]  (only allowed ones)
- *   GET    /api/tiddlers/<title>  get    -> DATA: the tiddler
+ *   GET    /api/tiddlers          list   -> DATA: [ {title, modified, modifier, tags, groups, owner} ]  (only allowed ones)
+ *   GET    /api/tiddlers/<title>  get    -> DATA: the tiddler (with groups, owner)
  *   PUT    /api/tiddlers/<title>  put    -> DATA: { success: true, tiddler }
  *   DELETE /api/tiddlers/<title>  remove -> DATA: { success: true }
  *
  * Every rule comes from lib/acl.js. A tiddler the user may not access is
  * answered exactly like a missing one (404 "Tiddler not found"), so nobody can
  * find out that it exists (roadmap Decision D11).
+ *
+ * Ownership (step 07b, users mode): the user who first stores a tiddler becomes its
+ * "owner" (set here, never taken from the request). Group members may read and edit it;
+ * only the owner or an administrator may change its groups or delete it.
  */
 const request = require('../../../../lib/request');
 const response = require('../../../../lib/response');
 const storage = require('../../../../lib/storage');
+const auth = require('../../../../lib/auth');
 const acl = require('../../../../lib/acl');
 
 const PREFIX = '/api/tiddlers/';
@@ -27,7 +32,8 @@ function list(ctx) {
 			modified: t.modified,
 			modifier: t.modifier,
 			tags: t.tags || [],
-			groups: acl.tiddlerGroups(t)
+			groups: acl.tiddlerGroups(t),
+			owner: t.owner || null
 		}));
 	response.ok(ctx, items);
 }
@@ -41,7 +47,7 @@ function get(ctx) {
 	if (!tiddler || !acl.canAccess(ctx.user, tiddler)) {
 		return response.error(ctx, 404, NOT_FOUND);
 	}
-	response.ok(ctx, tiddler);
+	response.ok(ctx, Object.assign({}, tiddler, { owner: tiddler.owner || null }));
 }
 
 function put(ctx) {
@@ -59,25 +65,35 @@ function put(ctx) {
 		return response.error(ctx, 400, 'Tiddler must be a JSON object');
 	}
 
-	// Groups are decided HERE, never taken as-is from the request
+	// Groups and owner are decided HERE, never taken as-is from the request
 	const requestedGroups = Array.isArray(tiddler.groups) ? tiddler.groups : undefined;
 	delete tiddler.groups;
+	delete tiddler.owner;
 
 	const existing = storage.get(title);
 	if (existing) {
-		// Updating: only if allowed; a normal user can never change the groups
+		// Updating: only if allowed
 		if (!acl.canAccess(user, existing)) {
 			return response.error(ctx, 404, NOT_FOUND);
 		}
-		tiddler.groups = (user.isAdmin && requestedGroups !== undefined) ?
-			acl.cleanGroups(requestedGroups) : acl.tiddlerGroups(existing);
+		if (existing.owner) tiddler.owner = existing.owner;
+		if (requestedGroups !== undefined && !acl.sameGroups(requestedGroups, acl.tiddlerGroups(existing))) {
+			// A group change: owner or administrator only (lib/acl.js)
+			const change = acl.groupsForChange(user, existing, requestedGroups);
+			if (change.error) return response.error(ctx, change.status, change.error);
+			tiddler.groups = change.groups;
+		} else {
+			tiddler.groups = acl.tiddlerGroups(existing);
+		}
 	} else {
-		// Creating: the creator's group (admins: what they asked for, may be none = admin-only)
+		// Creating: groups chosen by the creator among their own groups, else their default
+		// group (administrators: what they asked for, may be none = admin-only)
 		tiddler.groups = acl.groupsForNew(user, requestedGroups);
 		if (!user.isAdmin && tiddler.groups.length === 0) {
 			return response.error(ctx, 403,
 				'You are not a member of any group, so you cannot store tiddlers on the server. Ask an administrator.');
 		}
+		if (auth.mode() === 'users') tiddler.owner = user.username;
 	}
 
 	// Same rules as remote-server-example: title from the URL, default modified/modifier
@@ -91,7 +107,7 @@ function put(ctx) {
 		const other = user.isAdmin ? ' ("' + result.conflict + '")' : '';
 		return response.error(ctx, 409, 'Another tiddler' + other + ' already uses the file name for this title. Choose a different title.');
 	}
-	response.ok(ctx, { success: true, tiddler: tiddler });
+	response.ok(ctx, { success: true, tiddler: Object.assign({}, tiddler, { owner: tiddler.owner || null }) });
 }
 
 function remove(ctx) {
@@ -103,6 +119,8 @@ function remove(ctx) {
 	if (!existing || !acl.canAccess(ctx.user, existing)) {
 		return response.error(ctx, 404, NOT_FOUND);
 	}
+	const problem = acl.deleteProblem(ctx.user, existing);
+	if (problem) return response.error(ctx, problem.status, problem.error);
 	if (!storage.remove(title)) {
 		return response.error(ctx, 404, NOT_FOUND);
 	}

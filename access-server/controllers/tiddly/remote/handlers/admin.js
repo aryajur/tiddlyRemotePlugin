@@ -11,8 +11,9 @@
  *   PUT    /api/admin/groups/<name>         {description}
  *   DELETE /api/admin/groups/<name>         refused (409) while in use, unless ?force=true
  *
- *   GET    /api/admin/tiddlers              every tiddler with its groups (?ungrouped=true: only no-group ones)
+ *   GET    /api/admin/tiddlers              every tiddler with its groups and owner (?ungrouped=true: only no-group ones)
  *   PUT    /api/admin/tiddler-groups        {titles: [...], groups: [...], mode: "set"|"add"|"remove"}
+ *   PUT    /api/admin/tiddler-owner         {titles: [...], owner: "<username>" | null}   (step 07b)
  *
  * Safety rules
  *   - There is always at least one active (not disabled) administrator.
@@ -296,7 +297,7 @@ function listTiddlers(ctx) {
 	const list = storage.listAll()
 		.filter(t => !onlyUngrouped || acl.tiddlerGroups(t).length === 0)
 		.sort((a, b) => a.title.localeCompare(b.title))
-		.map(t => ({ title: t.title, groups: acl.tiddlerGroups(t), modified: t.modified, modifier: t.modifier, tags: t.tags || [] }));
+		.map(t => ({ title: t.title, groups: acl.tiddlerGroups(t), owner: t.owner || null, modified: t.modified, modifier: t.modifier, tags: t.tags || [] }));
 	response.ok(ctx, list);
 }
 
@@ -329,9 +330,35 @@ function setTiddlerGroups(ctx) {
 	response.ok(ctx, { updated: updated, notFound: notFound });
 }
 
+// PUT /api/admin/tiddler-owner {titles: [...], owner: "<username>" | null}  (step 07b)
+// Give tiddlers an owner (e.g. older tiddlers that have none), or remove the owner.
+function setTiddlerOwner(ctx) {
+	const b = bodyObject(ctx);
+	if (!b) return;
+	if (!Array.isArray(b.titles) || b.titles.length === 0 || b.titles.some(t => typeof t !== 'string')) {
+		return response.error(ctx, 400, 'titles must be a non-empty list of tiddler titles');
+	}
+	let owner = null;
+	if (b.owner !== null && b.owner !== undefined && b.owner !== '') {
+		owner = users.normalizeName(b.owner);
+		if (!users.getUser(owner)) return response.error(ctx, 400, 'No user named "' + owner + '"');
+	}
+	const updated = [], notFound = [];
+	b.titles.forEach(title => {
+		const t = storage.get(title);
+		if (!t) { notFound.push(title); return; }
+		if (owner) t.owner = owner; else delete t.owner;
+		storage.put(t);
+		updated.push({ title: title, owner: owner });
+	});
+	audit(ctx, 'owner ' + (owner || '(none)') + ' set on ' + updated.length + ' tiddler(s)' +
+		(notFound.length ? ', ' + notFound.length + ' not found' : ''));
+	response.ok(ctx, { updated: updated, notFound: notFound });
+}
+
 module.exports = {
 	usersModeOnly,
 	listUsers, createUser, updateUser, deleteUser,
 	listGroups, createGroup, updateGroup, deleteGroup,
-	listTiddlers, setTiddlerGroups
+	listTiddlers, setTiddlerGroups, setTiddlerOwner
 };

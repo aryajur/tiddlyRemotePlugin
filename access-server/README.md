@@ -4,8 +4,29 @@ Remote storage server for `zzz_RemoteStoragePlugin` (v1.10.0+) that adds
 **users, groups and an admin panel**. It is built step by step
 (see `paste_ready/` and `ACCESS_CONTROL_ROADMAP.md`).
 
-Current state (step 07): everything below, plus the **admin API** (users, groups,
-tiddler groups) for administrators - see "Admin API".
+Current state (step 07b): everything below, plus **tiddler ownership** and **My access**
+(see "Ownership"), and the **admin API** (step 07, see "Admin API").
+
+## Ownership (users mode, step 07b)
+
+- The user who first stores a tiddler on the server becomes its **owner** (field `owner`
+  in its file, set only by the server). Older tiddlers have no owner.
+- When saving a NEW tiddler, a user may choose its groups among their own groups
+  (`"groups": [...]` in the PUT); without a choice it gets their default group.
+- **Changing groups** of an existing tiddler: owner or administrator only. The owner can
+  only choose their own groups; groups an administrator added that the owner is not in
+  are kept. At least one group must remain. Other members: 403.
+- **Deleting**: owner or administrator only (403 for other members; tiddlers without an
+  owner: administrators only).
+- Group members can still read and edit the text.
+
+| Method | Path | Body | DATA |
+|---|---|---|---|
+| GET | `/api/me/access` | | `{username, isAdmin, groups, defaultGroup, owned:[{title, groups, modified}], accessible:[{title, groups, owner, modified}], counts}` |
+| PUT | `/api/me/tiddler-groups` | `{title, groups:[...]}` | `{title, groups}` (owner or admin) |
+| PUT | `/api/admin/tiddler-owner` | `{titles:[...], owner: "<user>" \| null}` | `{updated, notFound}` (admin) |
+
+CLI: `node tools/tiddlers_cli.js owner "<title>" <username|none>`; `list` shows owners.
 
 Step 06 state:
 - `AUTH_MODE=apikey` (default): same features as `remote-server-example`, API-key protection.

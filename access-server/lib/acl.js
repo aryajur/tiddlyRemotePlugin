@@ -8,8 +8,8 @@
  *   or visible to every logged-in user (UNGROUPED_POLICY=everyone).
  *
  * Groups of a tiddler are stored in its file as  "groups": ["hr", ...]
- * and are written ONLY by the server (handlers/tiddlers.js), never taken from
- * a normal user's request.
+ * and are written ONLY by the server (handlers/tiddlers.js). Who may change them
+ * and who may delete a tiddler: see "Ownership" below (owner + administrators).
  *
  * In AUTH_MODE=apikey the caller is an administrator, so nothing changes there.
  *
@@ -62,4 +62,49 @@ function groupsForNew(user, requested) {
 	return first ? [first] : [];
 }
 
-module.exports = { canAccess, cleanGroups, groupsForNew, tiddlerGroups };
+// ---- Ownership (step 07b) ------------------------------------------------
+// A tiddler's owner is the user who first stored it on the server ("owner" in
+// its file, set by the server, never by a request). Older tiddlers have no owner.
+
+function isOwner(user, tiddler) {
+	return !!user && !!tiddler && typeof tiddler.owner === 'string' && tiddler.owner === user.username;
+}
+
+// May this user delete it? Owner or administrator (and they must be able to access it).
+// Returns null if allowed, else { status, error }.
+function deleteProblem(user, tiddler) {
+	if (user.isAdmin || isOwner(user, tiddler)) return null;
+	return { status: 403, error: tiddler.owner ?
+		'Only the owner ("' + tiddler.owner + '") or an administrator can delete this tiddler' :
+		'Only an administrator can delete this tiddler (it has no owner)' };
+}
+
+// New groups for an EXISTING tiddler, requested by user.
+//   admin : exactly the requested (valid) groups, [] allowed (= admin-only)
+//   owner : the requested groups must all be the owner's own groups; groups the owner is
+//           NOT in that the tiddler already has are kept (an owner cannot remove a group
+//           an administrator added for other people). At least one group must remain.
+//   others: refused.
+// Returns { groups } or { status, error }.
+function groupsForChange(user, tiddler, requested) {
+	const wanted = cleanGroups(requested);
+	if (user.isAdmin) return { groups: wanted };
+	if (!isOwner(user, tiddler)) {
+		return { status: 403, error: 'Only the owner or an administrator can change the groups of this tiddler' };
+	}
+	const notMine = wanted.filter(g => !isMember(user, g));
+	if (notMine.length) {
+		return { status: 400, error: 'You can only choose groups you are a member of (not: ' + notMine.join(', ') + ')' };
+	}
+	const kept = tiddlerGroups(tiddler).filter(g => !isMember(user, g));
+	const groups = wanted.concat(kept.filter(g => wanted.indexOf(g) === -1));
+	if (groups.length === 0) return { status: 400, error: 'Choose at least one group' };
+	return { groups };
+}
+
+function sameGroups(a, b) {
+	const x = cleanGroups(a).slice().sort(), y = cleanGroups(b).slice().sort();
+	return x.length === y.length && x.every((g, i) => g === y[i]);
+}
+
+module.exports = { canAccess, cleanGroups, groupsForNew, tiddlerGroups, isOwner, deleteProblem, groupsForChange, sameGroups };

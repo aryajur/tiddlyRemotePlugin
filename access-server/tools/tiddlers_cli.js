@@ -13,6 +13,7 @@
  *   DATA_DIR=../tmp/access-users node tools/tiddlers_cli.js set "Test Tiddler" hr,eng
  *   DATA_DIR=../tmp/access-users node tools/tiddlers_cli.js set "Test Tiddler" none      (no group = admin-only)
  *   DATA_DIR=../tmp/access-users node tools/tiddlers_cli.js set-ungrouped hr             (every tiddler without a group)
+ *   DATA_DIR=../tmp/access-users node tools/tiddlers_cli.js owner "Test Tiddler" alice   (or none)
  *
  * Groups that do not exist yet are created in groups.json.
  */
@@ -64,7 +65,24 @@ function main() {
 	case 'list': {
 		const all = storage.listAll().sort((a, b) => a.title.localeCompare(b.title));
 		if (all.length === 0) console.log('(no tiddlers)');
-		all.forEach(t => console.log(t.title.padEnd(40) + ' groups: ' + describe(t.groups)));
+		all.forEach(t => console.log(t.title.padEnd(40) + ' groups: ' + describe(t.groups).padEnd(30) +
+			' owner: ' + (t.owner || '(none)')));
+		return;
+	}
+	case 'owner': {
+		const title = args[1];
+		if (!title || args[2] === undefined) fail('usage: owner "<title>" <username|none>');
+		const tiddler = storage.get(title);
+		if (!tiddler) fail('no tiddler titled "' + title + '" (titles are case-sensitive; use "list")');
+		const who = users.normalizeName(args[2]);
+		if (who === 'none') {
+			delete tiddler.owner;
+		} else {
+			if (!users.getUser(who)) fail('no user named "' + who + '"');
+			tiddler.owner = who;
+		}
+		if (storage.put(tiddler).conflict !== undefined) fail('could not save "' + title + '"');
+		console.log('"' + title + '" owner: ' + (tiddler.owner || '(none)'));
 		return;
 	}
 	case 'set': {
@@ -94,7 +112,7 @@ function main() {
 		return;
 	}
 	default:
-		console.log('Commands: list | set "<title>" <groups|none> | set-ungrouped <groups>');
+		console.log('Commands: list | set "<title>" <groups|none> | set-ungrouped <groups> | owner "<title>" <username|none>');
 		console.log('See the top of tools/tiddlers_cli.js for examples.');
 	}
 }
