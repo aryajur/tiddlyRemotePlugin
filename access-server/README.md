@@ -4,8 +4,30 @@ Remote storage server for `zzz_RemoteStoragePlugin` (v1.10.0+) that adds
 **users, groups and an admin panel**. It is built step by step
 (see `paste_ready/` and `ACCESS_CONTROL_ROADMAP.md`).
 
-Current state (step 07b): everything below, plus **tiddler ownership** and **My access**
-(see "Ownership"), and the **admin API** (step 07, see "Admin API").
+Current state (step 08): everything below, plus the **admin panel** at
+`http://localhost:3001/admin/` (see "Admin panel"), **tiddler ownership** and **My access**
+(step 07b, see "Ownership"), and the **admin API** (step 07, see "Admin API").
+
+## Admin panel (users mode, step 08)
+
+Open `http://localhost:3001/admin/` in a browser and log in as an administrator.
+
+| Screen | What it does |
+|---|---|
+| First run | With no users yet: create the first administrator (only in a browser on the server computer) |
+| Login | Administrators only; a normal account gets "This account is not an administrator" |
+| Users | Add, edit (groups, default group, administrator, disabled, new password), delete |
+| Groups | Add, edit description, delete (a group in use shows the counts and asks again before force-deleting) |
+| Tiddlers | Filter (title, tag, group, owner), "only without a group", select rows, then add / remove / set groups or set the owner |
+
+- Plain HTML/CSS/JS in `public/admin/` (no build step), served by `server.js` from the
+  same address as the API. Later served by nginx (`location /admin/`).
+- The login token is kept in `sessionStorage`: closing the tab logs out of the panel.
+- Everything the panel does goes through the admin API below, so all its rules apply
+  (last administrator, no self-demotion, groups must exist).
+- Safety: user-typed text (titles, descriptions) is inserted only as text, and the page
+  is sent with a strict `Content-Security-Policy` (only `admin.js`/`admin.css` may run,
+  no framing), so a title like `<img src=x onerror=alert(1)>` is shown literally.
 
 ## Ownership (users mode, step 07b)
 
@@ -140,8 +162,9 @@ not accepted in users mode.
 | POST | `/api/admin/groups` | `{name, description?}` | `{group}` |
 | PUT | `/api/admin/groups/<name>` | `{description}` | `{group}` |
 | DELETE | `/api/admin/groups/<name>` | (`?force=true` if in use) | `{deleted, removedFromUsers, removedFromTiddlers}` |
-| GET | `/api/admin/tiddlers` | (`?ungrouped=true`) | `[ {title, groups, modified, modifier, tags} ]` |
+| GET | `/api/admin/tiddlers` | (`?ungrouped=true`) | `[ {title, groups, owner, modified, modifier, tags} ]` |
 | PUT | `/api/admin/tiddler-groups` | `{titles: [...], groups: [...], mode: "set"/"add"/"remove"}` | `{updated, notFound}` |
+| PUT | `/api/admin/tiddler-owner` | `{titles: [...], owner: "<user>" \| null}` | `{updated, notFound}` |
 
 Rules:
 - There is always at least one active administrator (409 otherwise).
@@ -188,3 +211,4 @@ the same format the later OpenResty server uses. Never commit `DATA_DIR`.
 | `lib/auth.js` | `required` / `adminOnly` wrappers | `auth.lua` |
 | `lib/acl.js` | group access rules | `acl.lua` |
 | `tools/users_cli.js`, `tools/tiddlers_cli.js` | command-line management | (optional `resty` scripts) |
+| `public/admin/` (index.html, admin.css, admin.js) | admin panel, static files | `html/admin/` + `location /admin/` |

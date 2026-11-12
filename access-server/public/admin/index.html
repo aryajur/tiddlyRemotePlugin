@@ -1,0 +1,194 @@
+<!doctype html>
+<!--
+  TiddlyWiki Access Server - admin panel (step 08)
+  Served by server.js at /admin/ (later by nginx: location /admin/).
+  No inline script or style: the Content-Security-Policy header allows only admin.js and admin.css.
+-->
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Remote Storage Admin</title>
+	<link rel="stylesheet" href="admin.css">
+	<script src="admin.js" defer></script>
+</head>
+<body>
+	<header class="topbar">
+		<h1>Remote Storage Admin</h1>
+		<div id="whoami" class="whoami" hidden>
+			<span id="whoami-text"></span>
+			<button type="button" id="logout-button">Log out</button>
+		</div>
+	</header>
+
+	<div id="message" class="message" role="status" hidden></div>
+
+	<main>
+		<!-- Shown first, while asking the server which mode it runs in -->
+		<section id="screen-loading" class="card narrow">
+			<p id="loading-text">Connecting to the server...</p>
+			<button type="button" id="retry-button" hidden>Try again</button>
+		</section>
+
+		<!-- AUTH_MODE=apikey: there are no users to manage -->
+		<section id="screen-apikey" class="card narrow" hidden>
+			<h2>Users mode needed</h2>
+			<p>This server runs in <strong>API-key mode</strong> (AUTH_MODE=apikey). It has no users or groups,
+			so there is nothing to manage here.</p>
+			<p>Start it in users mode, for example:</p>
+			<pre>AUTH_MODE=users DATA_DIR=../tmp/access-users npm start</pre>
+		</section>
+
+		<!-- No user yet: create the first administrator (only from the server computer) -->
+		<section id="screen-setup" class="card narrow" hidden>
+			<h2>Create the first administrator</h2>
+			<p class="hint">This server has no users yet. This works only once, and only in a browser on the
+			server computer itself.</p>
+			<form id="setup-form" autocomplete="off">
+				<label>Username <input id="setup-username" required minlength="3" maxlength="32" autocomplete="username"></label>
+				<label>Password <input id="setup-password" type="password" required minlength="8" autocomplete="new-password"></label>
+				<label>Confirm password <input id="setup-confirm" type="password" required minlength="8" autocomplete="new-password"></label>
+				<p id="setup-error" class="form-error" role="alert"></p>
+				<button type="submit" id="setup-submit" class="primary">Create administrator</button>
+			</form>
+		</section>
+
+		<!-- Login -->
+		<section id="screen-login" class="card narrow" hidden>
+			<h2>Administrator login</h2>
+			<form id="login-form">
+				<label>Username <input id="login-username" required autocomplete="username"></label>
+				<label>Password <input id="login-password" type="password" required autocomplete="current-password"></label>
+				<p id="login-error" class="form-error" role="alert"></p>
+				<button type="submit" id="login-submit" class="primary">Log in</button>
+			</form>
+			<p class="hint">Closing this browser tab logs you out of the panel.</p>
+		</section>
+
+		<!-- The panel -->
+		<section id="screen-main" hidden>
+			<nav class="tabs" role="tablist">
+				<button type="button" role="tab" class="tab" data-tab="users">Users <span class="count" id="count-users"></span></button>
+				<button type="button" role="tab" class="tab" data-tab="groups">Groups <span class="count" id="count-groups"></span></button>
+				<button type="button" role="tab" class="tab" data-tab="tiddlers">Tiddlers <span class="count" id="count-tiddlers"></span></button>
+				<span class="spacer"></span>
+				<button type="button" id="reload-button">Reload from server</button>
+			</nav>
+
+			<!-- Users -->
+			<div id="tab-users" class="tab-panel" role="tabpanel">
+				<div class="toolbar">
+					<button type="button" id="add-user-button" class="primary">Add user</button>
+				</div>
+				<div class="table-wrap">
+					<table>
+						<thead><tr>
+							<th>Username</th><th>Groups</th><th>Default group</th><th>Administrator</th>
+							<th>Status</th><th>Created</th><th class="actions">Actions</th>
+						</tr></thead>
+						<tbody id="users-body"></tbody>
+					</table>
+				</div>
+			</div>
+
+			<!-- Groups -->
+			<div id="tab-groups" class="tab-panel" role="tabpanel" hidden>
+				<div class="toolbar">
+					<button type="button" id="add-group-button" class="primary">Add group</button>
+				</div>
+				<div class="table-wrap">
+					<table>
+						<thead><tr>
+							<th>Name</th><th>Description</th><th class="num">Users</th><th class="num">Tiddlers</th>
+							<th>Created</th><th class="actions">Actions</th>
+						</tr></thead>
+						<tbody id="groups-body"></tbody>
+					</table>
+				</div>
+			</div>
+
+			<!-- Tiddlers -->
+			<div id="tab-tiddlers" class="tab-panel" role="tabpanel" hidden>
+				<div class="toolbar">
+					<input id="tiddler-filter" type="search" placeholder="Filter by title, tag, group or owner" aria-label="Filter tiddlers">
+					<label class="inline"><input id="tiddler-ungrouped" type="checkbox"> Only tiddlers without a group</label>
+					<span id="tiddler-shown" class="hint"></span>
+				</div>
+
+				<div id="bulk" class="bulk">
+					<div class="bulk-head">
+						<strong id="bulk-count">0 selected</strong>
+						<button type="button" id="bulk-clear">Clear selection</button>
+					</div>
+					<div class="bulk-row">
+						<span class="bulk-label">Groups:</span>
+						<span id="bulk-groups" class="checks"></span>
+						<select id="bulk-mode" aria-label="How to apply the ticked groups">
+							<option value="add">Add the ticked groups</option>
+							<option value="remove">Remove the ticked groups</option>
+							<option value="set">Set to exactly the ticked groups</option>
+						</select>
+						<button type="button" id="bulk-apply">Apply to selected</button>
+					</div>
+					<div class="bulk-row">
+						<span class="bulk-label">Owner:</span>
+						<select id="bulk-owner" aria-label="New owner"></select>
+						<button type="button" id="bulk-owner-apply">Set owner of selected</button>
+					</div>
+				</div>
+
+				<div class="table-wrap">
+					<table>
+						<thead><tr>
+							<th class="pick"><input id="tiddler-all" type="checkbox" aria-label="Select all shown tiddlers"></th>
+							<th>Title</th><th>Groups</th><th>Owner</th><th>Modified</th><th>Modified by</th>
+						</tr></thead>
+						<tbody id="tiddlers-body"></tbody>
+					</table>
+				</div>
+			</div>
+		</section>
+	</main>
+
+	<!-- Add / edit user -->
+	<dialog id="user-dialog">
+		<form id="user-form" autocomplete="off">
+			<h2 id="user-dialog-title">Add user</h2>
+			<label>Username <input id="user-name" required minlength="3" maxlength="32"></label>
+			<label><span id="user-password-label">Password</span>
+				<input id="user-password" type="password" autocomplete="new-password"></label>
+			<p id="user-password-hint" class="hint"></p>
+			<fieldset>
+				<legend>Groups</legend>
+				<div id="user-groups" class="checks"></div>
+			</fieldset>
+			<label>Default group (new tiddlers get it)
+				<select id="user-default"></select></label>
+			<label class="inline"><input id="user-admin" type="checkbox"> Administrator (sees and manages everything)</label>
+			<label class="inline" id="user-disabled-row"><input id="user-disabled" type="checkbox"> Disabled (cannot log in; ends current logins)</label>
+			<p id="user-self-note" class="hint" hidden>This is your own account: another administrator must remove
+			your administrator rights or disable you.</p>
+			<p id="user-error" class="form-error" role="alert"></p>
+			<div class="dialog-buttons">
+				<button type="button" class="cancel">Cancel</button>
+				<button type="submit" id="user-save" class="primary">Save</button>
+			</div>
+		</form>
+	</dialog>
+
+	<!-- Add / edit group -->
+	<dialog id="group-dialog">
+		<form id="group-form" autocomplete="off">
+			<h2 id="group-dialog-title">Add group</h2>
+			<label>Name <input id="group-name" required minlength="2" maxlength="32"></label>
+			<p class="hint" id="group-name-hint">2-32 characters: letters, digits, "_", "." or "-" (stored in lower case).</p>
+			<label>Description <textarea id="group-description" maxlength="500" rows="3"></textarea></label>
+			<p id="group-error" class="form-error" role="alert"></p>
+			<div class="dialog-buttons">
+				<button type="button" class="cancel">Cancel</button>
+				<button type="submit" id="group-save" class="primary">Save</button>
+			</div>
+		</form>
+	</dialog>
+</body>
+</html>

@@ -6,7 +6,10 @@
  * Start:   npm start                         (port 3001, data in ./data, API-key mode)
  *          PORT=3002 DATA_DIR=../tmp/access-data npm start
  *          AUTH_MODE=users DATA_DIR=../tmp/access-users npm start   (username/password login)
+ *
+ * Admin panel (step 08): http://localhost:3001/admin/  - plain files from public/admin/
  */
+const path = require('path');
 const express = require('express');
 const env = require('./lib/env_helper');
 const log = require('./lib/log_helper');
@@ -17,9 +20,29 @@ const users = require('./lib/users');
 const sessions = require('./lib/sessions');
 const root = require('./root');
 
+// Admin panel (step 08): static files, same origin as the API (no CORS needed, roadmap D14).
+// Lua port: "location /admin/ { root html; }" in nginx.conf, with the same headers.
+const ADMIN_DIR = path.join(__dirname, 'public', 'admin');
+const ADMIN_HEADERS = {
+	// Only our own script and stylesheet may run, the page cannot be framed,
+	// and fetch() may only talk to this server. A tiddler title like
+	// <img src=x onerror=alert(1)> can therefore never run code in the panel.
+	'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; " +
+		"img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+	'X-Content-Type-Options': 'nosniff',
+	'X-Frame-Options': 'DENY',
+	'Referrer-Policy': 'no-referrer',
+	'Cache-Control': 'no-cache'
+};
+
 function createApp() {
 	const app = express();
 	app.disable('x-powered-by');
+
+	// /admin -> /admin/ (redirect), /admin/ -> index.html, /admin/admin.js ...
+	// Anything not found falls through to root.js (404 in the envelope).
+	app.use('/admin', (req, res, next) => { res.set(ADMIN_HEADERS); next(); },
+		express.static(ADMIN_DIR, { index: 'index.html', redirect: true, dotfiles: 'ignore', fallthrough: true }));
 
 	// Read every request body as raw bytes, max 50 MB (same limit as remote-server-example).
 	// Handlers decode JSON themselves (lib/request.js), like the Lua version will.
@@ -76,7 +99,9 @@ function start() {
 				console.log('\nNO USERS YET. Create the first administrator from THIS computer:');
 				console.log('  curl -X POST http://localhost:' + port + '/api/setup -H "Content-Type: application/json" \\');
 				console.log('       -d \'{"username":"admin","password":"choose-a-strong-password"}\'');
+				console.log('  or open http://localhost:' + port + '/admin/ in a browser on THIS computer.');
 			}
+			console.log('Admin panel: http://localhost:' + port + '/admin/');
 		}
 		console.log('\nAPI Endpoints (replies use the {RESP, CODE, MSG, DATA, META} envelope):');
 		console.log('  POST   /api/setup             - Create the first administrator (users mode)');
